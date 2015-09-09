@@ -1,0 +1,19 @@
+{
+  "name": "cmd",
+  "version": "1.0.0",
+  "description": "",
+  "main": "lib/index.js",
+  "bin": {
+    "rr": "bin/cmd.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "as-array": "^2.0.0",
+    "minimist": "^1.2.0",
+    "ramda": "^0.17.1"
+  }
+}
