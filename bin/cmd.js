@@ -25,50 +25,73 @@ function use () {
   };
 }
 
-function command () {
+function createTrigger (type, comparator) {
 
-  let parts = asArray(arguments);
+  return function () {
 
-  return function (options) {
+    let parts = asArray(arguments);
 
-    options = options || {};
+    return function (options) {
 
-    return function (data, flags/*, globalOptions */) {
+      options = options || {};
 
-      let concatType = R.concat(R.of({type: 'command'}));
-      let concatOptions = R.concat(R.of({options: options}));
+      return function (data, flags, globalOptions) {
 
-      let composeParts = R.pipe(
-        R.reduce((acc, part) => {
+        globalOptions = globalOptions || {};
 
-          if (part.multiple) {
-            acc[part.type] = (acc[part.type] || []).concat(part.value);
+        let concatType = R.concat(R.of({type: type}));
+        let concatOptions = R.concat(R.of({options: R.mergeAll([options, globalOptions])}));
+
+        let composeParts = R.pipe(
+          R.reduce((acc, part) => {
+
+            if (part.multiple) {
+              acc[part.type] = (acc[part.type] || []).concat(part.value);
+            }
+            else {
+              acc[part.type] = part.value;
+            }
+
+            return acc;
+          }, {}),
+          asArray,
+          concatOptions,
+          concatType,
+          R.mergeAll
+        );
+
+        let results = composeParts(parts);
+
+        if (results.aliases) {
+          if (comparator(results, data, flags)) {
+            return results;
           }
-          else {
-            acc[part.type] = value;
-          }
-
-          return acc;
-        }, {}),
-        asArray,
-        concatOptions,
-        concatType,
-        R.mergeAll
-      );
-
-      let results = composeParts(parts);
-
-      if (results.aliases) {
-        if (results.aliases.indexOf(data[0]) > -1) {
+        }
+        else {
           return results;
         }
-      }
-      else {
-        return results;
-      }
+      };
     };
   };
 }
+
+var command = createTrigger('command', function (results, data) {
+
+  return results.aliases.indexOf(data[0]) > -1;
+});
+
+var flag = createTrigger('flag', function (results, data, flags) {
+
+  let matchesFlagAlias = R.pipe(
+    R.prop('aliases'),
+    R.map(R.replace(/^-+/, '')),
+    R.intersection(R.keys(flags)),
+    R.length,
+    R.flip(R.gt)(0)
+  );
+
+  return matchesFlagAlias(results);
+});
 
 function cli () {
 
@@ -86,7 +109,7 @@ function cli () {
       R.map(ctx => {
 
         if (typeof ctx === 'function') {
-          return ctx(data, flags);
+          return ctx(data, flags, {/* these are global options*/});
         }
         else {
           return {
@@ -95,7 +118,7 @@ function cli () {
           };
         }
       })
-    )
+    );
 
     let parsedCtx = parseCommandCtx(contexts);
 
@@ -113,17 +136,44 @@ function cli () {
       })
     );
 
-    var runFlags = function () {}
+    // Run flags
+    let isFlag = R.pipe(
+      R.prop('type'),
+      R.equals('flag')
+    );
+    let runFlags = R.pipe(
+      R.filter(isFlag),
+      R.map(R.pick(['runners', 'options'])),
+      R.forEach(r => {
+
+        R.forEach(fn => fn(data, flags, r.options))(r.runners)
+      })
+    );
 
     runFlags(parsedCtx);
     runCommands(parsedCtx);
-
-    // TODO: run flags first
   };
 }
 
 
 
+
+let anotherCommand = command(
+  name('another'),
+  use(function () {
+
+    console.log('another command');
+  })
+);
+
+let someFlag = flag(
+  // default('some value'),
+  name('-f', '--something'),
+  use(function () {
+
+    console.log('execute flag');
+  })
+);
 
 let someCommand = command(
   name('some', 'command'),
@@ -133,21 +183,14 @@ let someCommand = command(
   })
 );
 
-let anotherCommand = command(
-  name('another'),
-  use(function () {
-
-    console.log('another command');
-  })
-)
-
 let run = cli(
   someCommand({option: 'here'}),
   anotherCommand(),
   use(function () {
 
     console.log('always runs');
-  })
+  }),
+  someFlag()
 );
 
 run(process.argv.slice(2));
