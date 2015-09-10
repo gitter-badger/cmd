@@ -6,10 +6,11 @@ let asArray = require('as-array');
 let R = require('ramda');
 let minimist = require('minimist');
 
-function name() {
+
+function name () {
 
   return {
-    type: 'alias',
+    type: 'aliases',
     value: asArray(arguments),
     multiple: true
   };
@@ -18,68 +19,106 @@ function name() {
 function use () {
 
   return {
-    type: 'executer',
+    type: 'runners',
     value: asArray(arguments),
     multiple: true
   };
 }
 
-function options (input) {
-
-  return {
-    type: 'options',
-    value: input
-  };
-}
-
 function command () {
 
-  let inputs = asArray(arguments);
+  let parts = asArray(arguments);
 
-  return options => {
+  return function (options) {
 
-    return (data, flags) => {
+    options = options || {};
 
-      let c = R.reduce((cmd, def) => {
+    return function (data, flags/*, globalOptions */) {
 
-        if (def.multiple) {
-          cmd[def.type] = (cmd[def.type] || []).concat(def.value);
+      let concatType = R.concat(R.of({type: 'command'}));
+      let concatOptions = R.concat(R.of({options: options}));
+
+      let composeParts = R.pipe(
+        R.reduce((acc, part) => {
+
+          if (part.multiple) {
+            acc[part.type] = (acc[part.type] || []).concat(part.value);
+          }
+          else {
+            acc[part.type] = value;
+          }
+
+          return acc;
+        }, {}),
+        asArray,
+        concatOptions,
+        concatType,
+        R.mergeAll
+      );
+
+      let results = composeParts(parts);
+
+      if (results.aliases) {
+        if (results.aliases.indexOf(data[0]) > -1) {
+          return results;
         }
-        else {
-          cmd[def.type] = def.value
-        }
-
-        return cmd;
-      }, {}, inputs);
-
-      c.runnable = c.alias.indexOf(data[0]) > -1;
-      c.options = options;
-
-      return c;
-    }
+      }
+      else {
+        return results;
+      }
+    };
   };
 }
 
 function cli () {
 
-  let plugins = asArray(arguments);
+  let contexts = asArray(arguments);
 
-  return argv => {
+  return function (input) {
 
-    let input = minimist(argv);
-    let data = input._;
-    let flags = R.omit(['_'])(input);
+    let parsedInput = minimist(input);
+    let data = parsedInput._;
+    let flags = R.omit(['_'], parsedInput);
 
-    let parseRunnables = R.pipe(
-      R.map(cmd => cmd(data, flags)),
-      R.filter(R.prop('runnable')),
-      R.map(cmd => {
+    // Parse all
+    let parseCommandCtx = R.compose(
+      R.filter(R.identity),
+      R.map(ctx => {
 
-        return R.map(execute => {execute(data, flags, cmd.options)}, cmd.executer);
+        if (typeof ctx === 'function') {
+          return ctx(data, flags);
+        }
+        else {
+          return {
+            type: 'anonymous',
+            runners: R.prop('value')(ctx)
+          };
+        }
+      })
+    )
+
+    let parsedCtx = parseCommandCtx(contexts);
+
+    // Run commands
+    let isRunner = R.pipe(
+      R.prop('type'),
+      R.either(R.equals('command'), R.equals('anonymous'))
+    );
+    let runCommands = R.pipe(
+      R.filter(isRunner),
+      R.map(R.pick(['runners', 'options'])),
+      R.forEach(r => {
+
+        R.forEach(fn => fn(data, flags, r.options))(r.runners)
       })
     );
 
-    parseRunnables(plugins);
+    var runFlags = function () {}
+
+    runFlags(parsedCtx);
+    runCommands(parsedCtx);
+
+    // TODO: run flags first
   };
 }
 
@@ -87,33 +126,29 @@ function cli () {
 
 
 let someCommand = command(
-  name('somecommand', 'anothername'),
-  use((data, flags, options) => {
+  name('some', 'command'),
+  use(function () {
 
-    console.log('ran callback', options);
-  }),
-  use(() => {
-
-    console.log('second callback');
+    console.log('in command');
   })
 );
 
-let another = command(
+let anotherCommand = command(
   name('another'),
-  use(() => {
+  use(function () {
 
-    console.log('another!!');
+    console.log('another command');
   })
 )
 
 let run = cli(
-  // options({ // these are global options
-  //   global: 'options'
-  // }),
-  another(),
-  someCommand({
-    key: 'value'
+  someCommand({option: 'here'}),
+  anotherCommand(),
+  use(function () {
+
+    console.log('always runs');
   })
 );
 
 run(process.argv.slice(2));
+
