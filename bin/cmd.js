@@ -159,7 +159,7 @@ function cli () {
 
 
 let anotherCommand = command(
-  name('another'),
+  name('another', 'something'),
   use(function () {
 
     console.log('another command');
@@ -180,6 +180,10 @@ let someCommand = command(
   use(function () {
 
     console.log('in command');
+    return function (done) {
+
+      done();
+    }
   })
 );
 
