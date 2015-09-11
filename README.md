@@ -1,2 +1,3 @@
 # cmd
-Compose command line applications like Beethoven
+
+Composable command line application library
