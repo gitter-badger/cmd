@@ -1,7 +1,7 @@
 {
   "name": "cmd",
   "version": "0.0.5",
-  "description": "",
+  "description": "Composable command line application library",
   "main": "lib/index.js",
   "bin": {
     "rr": "bin/cmd.js"

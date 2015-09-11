@@ -1,6 +1,6 @@
 # cmd
 
-Composable command line apps!
+Composable command line application library
 
 ## Install
 
